@@ -1,0 +1,63 @@
+# Cloud engine: started by the Pipeline Worker when a video is uploaded from a device without Engine.bat.
+# Same job as Engine.bat (scripts/engine-core.mjs) with x264 instead of NVENC. Secrets: node scripts/setup-cloud.mjs
+name: Cloud engine
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Pipeline cloud job id (an upload), or a version id when mode is hq
+        required: true
+      mode:
+        description: "upload (default) or hq: make the Instagram file for a scheduled post from its Drive master"
+        required: false
+        default: upload
+permissions:
+  contents: read
+concurrency:
+  group: cloud-engine-${{ github.event.inputs.job_id }}
+jobs:
+  encode:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Start clock
+        run: echo "JOB_START=$(date +%s)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Static FFmpeg + rclone, cached between runs: saves the minute apt-get used to take on every upload.
+      - name: Cache FFmpeg and rclone
+        id: tools
+        uses: actions/cache@v4
+        with:
+          path: ~/tools
+          key: tools-ffmpeg-rclone-v1
+      - name: Download FFmpeg and rclone
+        if: steps.tools.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/tools && cd ~/tools
+          curl -fsSL https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz | tar -xJ --strip-components=2 --wildcards '*/bin/ffmpeg' '*/bin/ffprobe'
+          curl -fsSL -o rclone.zip https://downloads.rclone.org/rclone-current-linux-amd64.zip && unzip -qj rclone.zip '*/rclone' && rm rclone.zip
+          chmod +x ffmpeg ffprobe rclone
+      - name: Tools on PATH
+        run: |
+          echo "$HOME/tools" >> "$GITHUB_PATH"
+          "$HOME/tools/ffmpeg" -hide_banner -version | head -1
+          "$HOME/tools/rclone" version | head -1
+      - name: rclone config
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONF }}
+        run: |
+          mkdir -p ~/.config/rclone
+          printf '%s\n' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+      - name: Encode, upload, report
+        env:
+          JOB_ID: ${{ github.event.inputs.job_id }}
+          MODE: ${{ github.event.inputs.mode }}
+          PIPELINE_URL: ${{ secrets.PIPELINE_URL }}
+          PIPELINE_ADMIN_KEY: ${{ secrets.PIPELINE_ADMIN_KEY }}
+          DRIVE_REMOTE: ${{ secrets.DRIVE_REMOTE }}
+        run: if [ "$MODE" = "hq" ]; then node scripts/cloud-job.mjs hq "$JOB_ID"; else node scripts/cloud-job.mjs "$JOB_ID"; fi
