@@ -13,8 +13,9 @@ const hq = process.argv[2] === "hq"; // "hq <version id>": make the Instagram fi
 const jobId = process.argv[hq ? 3 : 2] || "";
 if (!/^[\w-]{10,64}$/.test(jobId)) { console.error("usage: node scripts/cloud-job.mjs <job id> | hq <version id>"); process.exit(2); }
 if (!process.env.PIPELINE_URL || !process.env.PIPELINE_ADMIN_KEY) { console.error("PIPELINE_URL and PIPELINE_ADMIN_KEY secrets are missing"); process.exit(2); }
-// hqPreset: "medium" keeps the Instagram HQ file close to "slow" quality at about half the runner minutes.
-const cfg = { url: process.env.PIPELINE_URL.replace(/\/$/, ""), adminKey: process.env.PIPELINE_ADMIN_KEY, encoder: "libx264", hqPreset: "medium", driveRemote: process.env.DRIVE_REMOTE || undefined };
+// hqPreset "slow": the sharpest x264 setting worth its time. Runs in the public engine repo, whose minutes are free, and
+// the HQ file is started hours before the post, so the extra minutes never make a post late.
+const cfg = { url: process.env.PIPELINE_URL.replace(/\/$/, ""), adminKey: process.env.PIPELINE_ADMIN_KEY, encoder: "libx264", hqPreset: "slow", driveRemote: process.env.DRIVE_REMOTE || undefined };
 const api = makeApi(cfg);
 const started = Number(process.env.JOB_START) * 1000 || Date.now();
 let chain = Promise.resolve(), last = 0, latest = null;
