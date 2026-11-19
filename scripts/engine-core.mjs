@@ -303,6 +303,9 @@ export async function processUpload({ cfg, file, clipId, onProgress = () => {}, 
           if (us && meta.duration) emit({ encode: Math.min(1, Number(us) / 1e6 / meta.duration) });
         },
       });
+      // A cut-off file (a copy that stopped early) still claims its full length in its header; ffmpeg just stops where the data ends.
+      const plays = (await probe(proxy)).duration;
+      if (meta.duration > 2 && plays < meta.duration * 0.95 - 1) throw new Error(`This file looks cut off: it says it is ${Math.round(meta.duration)} s long but only ${Math.round(plays)} s of it plays. Export or copy it again and upload the whole file.`);
       emit({ encode: 1, proxyTotal: statSync(proxy).size });
       await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-ss", String(Math.min(3, Math.max(0.5, meta.duration / 3))), "-i", proxy,
         "-frames:v", "1", "-vf", "scale=480:-2", "-q:v", "4", poster]);
